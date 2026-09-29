@@ -1,5 +1,11 @@
 # Lanila Wedding Planner
 
+> **Auth terintegrasi dengan Lanila Buku Kas** — lihat `AUTH.md`.
+> Login/Register memakai project Supabase yang sama.
+
+---
+
+
 A working front-end prototype of the Lanila Wedding Planner product: Next.js
 (App Router) + TypeScript + Tailwind, with a mock in-memory/localStorage data
 layer standing in for the real backend so the whole product can be clicked

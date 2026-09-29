@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import { StoreProvider } from "@/lib/store";
+import { AuthProvider } from "@/lib/auth-context";
+import { AuthGate } from "@/components/AuthGate";
 
 const plusJakarta = Plus_Jakarta_Sans({
   subsets: ["latin"],
@@ -18,7 +20,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="id" className={plusJakarta.variable}>
       <body>
-        <StoreProvider>{children}</StoreProvider>
+        <AuthProvider>
+          <AuthGate>
+            <StoreProvider>{children}</StoreProvider>
+          </AuthGate>
+        </AuthProvider>
       </body>
     </html>
   );

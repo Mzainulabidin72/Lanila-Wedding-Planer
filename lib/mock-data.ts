@@ -10,20 +10,20 @@ import {
   WeddingWorkspace,
 } from "./types";
 
-export const WORKSPACE_ID = "wk_ayu_angga";
+export const WORKSPACE_ID = "wk_abidin_nila";
 
 export const workspace: WeddingWorkspace = {
   id: WORKSPACE_ID,
-  name: "Ayu & Angga",
+  name: "Abidin & Nila",
   weddingDate: "2027-02-14T08:00:00+07:00",
   weddingType: "Akad & Resepsi",
-  venue: "Gedung Serbaguna Wonosobo",
+  venue: "Rumah Nila",
   targetBudget: 85_000_000,
 };
 
 export const members: WeddingMember[] = [
-  { profileId: "u_ayu", workspaceId: WORKSPACE_ID, role: "owner", fullName: "Ayu" },
-  { profileId: "u_angga", workspaceId: WORKSPACE_ID, role: "partner", fullName: "Angga" },
+  { profileId: "u_nila", workspaceId: WORKSPACE_ID, role: "owner", fullName: "Nila" },
+  { profileId: "u_abidin", workspaceId: WORKSPACE_ID, role: "partner", fullName: "Abidin" },
 ];
 
 export const preparationStages: PreparationStage[] = [

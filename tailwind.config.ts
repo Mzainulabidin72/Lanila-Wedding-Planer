@@ -11,6 +11,16 @@ const config: Config = {
           light: "#8B5CF6",
           dark: "#0F172A",
         },
+        // Lanila brand guide (logo gradient, Wedding Planner coral, dark mode surface)
+        lanila: {
+          blue: "#3F8CFF",
+          indigo: "#5B4CF2",
+          violet: "#8A3FF7",
+          coral: "#F0556A", // aksen Wedding Planner (dipakai di atas background gelap)
+          "coral-deep": "#D6334D", // versi lebih gelap, kontras aman di atas putih
+          navy: "#0F172A",
+          night: "#161F29",
+        },
         // Wedding-domain accent — the "warmth" layer specific to this app
         blush: {
           50: "#FBF3F1",

@@ -17,12 +17,13 @@ import {
   FileText,
   Settings,
   UserCircle,
+  type LucideIcon,
 } from "lucide-react";
 
 interface NavItem {
   href: string;
   label: string;
-  icon: React.ComponentType<{ size?: number; className?: string }>;
+  icon: LucideIcon;
 }
 
 interface NavGroup {

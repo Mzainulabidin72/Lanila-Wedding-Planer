@@ -8,7 +8,7 @@ import React, {
   useMemo,
   useState,
 } from "react";
-import type { Session, User } from "@supabase/supabase-js";
+import type { AuthError, Session, User } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
 
 export interface Profile {
@@ -33,6 +33,43 @@ interface AuthContextValue {
   ) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
+}
+
+/** Terjemahkan error Supabase Auth ke pesan Indonesia yang jelas untuk pengguna. */
+function toLoginMessage(error: AuthError): string {
+  const text = error.message.toLowerCase();
+  if (error.code === "email_not_confirmed" || text.includes("email not confirmed")) {
+    return "Email belum dikonfirmasi. Cek kotak masuk kamu, klik tautan konfirmasi, lalu masuk lagi.";
+  }
+  if (error.code === "invalid_credentials" || text.includes("invalid login credentials")) {
+    return "Email atau kata sandi salah.";
+  }
+  if (error.status === 429 || error.code === "over_request_rate_limit") {
+    return "Terlalu banyak percobaan. Tunggu sebentar, lalu coba lagi.";
+  }
+  if (error.name === "AuthRetryableFetchError") {
+    return "Tidak bisa terhubung ke server. Periksa koneksi internet kamu.";
+  }
+  console.error("[auth] signIn:", error.message);
+  return "Gagal masuk. Coba lagi beberapa saat lagi.";
+}
+
+function toSignUpMessage(error: AuthError): string {
+  const text = error.message.toLowerCase();
+  if (error.code === "user_already_exists" || text.includes("already registered")) {
+    return "Email ini sudah terdaftar. Coba masuk, atau pakai email lain.";
+  }
+  if (error.code === "weak_password" || text.includes("password")) {
+    return "Kata sandi terlalu lemah. Pakai minimal 8 karakter dengan kombinasi huruf dan angka.";
+  }
+  if (error.status === 429 || error.code === "over_request_rate_limit") {
+    return "Terlalu banyak percobaan. Tunggu sebentar, lalu coba lagi.";
+  }
+  if (error.name === "AuthRetryableFetchError") {
+    return "Tidak bisa terhubung ke server. Periksa koneksi internet kamu.";
+  }
+  console.error("[auth] signUp:", error.message);
+  return "Gagal mendaftar. Coba lagi beberapa saat lagi.";
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -129,12 +166,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       email: email.trim(),
       password,
     });
-    if (error) {
-      const msg = /invalid|credentials|password|email/i.test(error.message)
-        ? "Email atau kata sandi salah."
-        : error.message;
-      return { error: msg };
-    }
+    if (error) return { error: toLoginMessage(error) };
     return { error: null };
   }, []);
 
@@ -147,7 +179,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           data: { full_name: fullName.trim() },
         },
       });
-      if (error) return { error: error.message };
+      if (error) return { error: toSignUpMessage(error) };
 
       if (data.user) {
         await ensureProfile(data.user, fullName.trim());

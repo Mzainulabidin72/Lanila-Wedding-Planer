@@ -6,8 +6,8 @@
 ---
 
 
-A working front-end prototype of the Lanila Wedding Planner product: Next.js
-(App Router) + TypeScript + Tailwind, with a mock in-memory/localStorage data
+A working front-end prototype of the Lanila Wedding Planner product: Vite +
+React + React Router + TypeScript + Tailwind, with a mock in-memory/localStorage data
 layer standing in for the real backend so the whole product can be clicked
 through end-to-end before Supabase/auth is wired in.
 
@@ -22,7 +22,7 @@ npm install
 npm run dev
 ```
 
-Then open `http://localhost:3000` — it redirects into a seeded demo
+Then open `http://localhost:3000` (port dikunci di `vite.config.ts`) — it redirects into a seeded demo
 workspace ("Ayu & Angga") at `/w/wk_ayu_angga/dashboard`.
 
 There's also `/onboarding`, a standalone 4-step wizard (couple name, wedding
@@ -36,7 +36,7 @@ backend exists.
 |---|---|---|
 | Dashboard | `/w/[id]/dashboard` | Countdown, overall + per-category progress, budget summary, upcoming tasks, wedding health panel, activity feed — all computed from data, nothing hardcoded |
 | Peta Persiapan | `/w/[id]/peta-persiapan` | Visual stage journey + per-stage checklist, status is click-to-cycle |
-| Alur Pernikahan | `/w/[id]/alur-pernikahan` | Content-driven guide (see `lib/content/alur-pernikahan.ts`), explicitly labeled as general guidance vs. official requirement |
+| Alur Pernikahan | `/w/[id]/alur-pernikahan` | Content-driven guide (see `src/lib/content/alur-pernikahan.ts`), explicitly labeled as general guidance vs. official requirement |
 | Timeline | `/w/[id]/timeline` | Kanban-style task board by status |
 | Budget | `/w/[id]/budget` | Grouped by category, per-item payment recording |
 | Vendor | `/w/[id]/vendor` | Card grid with status control |
@@ -50,20 +50,28 @@ backend exists.
 ## Architecture
 
 ```
-app/
-  onboarding/                  4-step workspace creation wizard
-  w/[workspaceId]/             everything inside a wedding workspace
-    layout.tsx                 sidebar + topbar + mobile nav shell
-    dashboard/ peta-persiapan/ alur-pernikahan/ timeline/ budget/
-    vendor/ tamu/ seserahan/ hadiah/ acara/ dokumen/ settings/
+index.html                     entry HTML (font, judul halaman)
+vite.config.ts                 alias "@" -> src, port 3000
+vercel.json                    preset Vite + rewrite SPA
 
-components/
+src/
+  main.tsx                     entry: BrowserRouter + render
+  App.tsx                      SEMUA route ada di sini (lazy per halaman)
+  index.css                    Tailwind + style global
+  layouts/
+    WorkspaceLayout.tsx        sidebar + topbar + mobile nav shell
+  pages/
+    LoginPage, RegisterPage, OnboardingPage, RootRedirect, NotFoundPage
+    workspace/                 satu file per halaman di dalam workspace
+                               (Dashboard, PetaPersiapan, Budget, Tamu, ...)
+
+src/components/
   ui/                          Button, Card, Badge, ProgressBar, StatusBadge,
                                 EmptyState, Modal — the shared design system
   wedding/                     Sidebar, Topbar, MobileNav, CountdownWidget,
                                 WeddingHealthPanel, ActivityFeed
 
-lib/
+src/lib/
   types.ts                     domain types, mirrors supabase/schema.sql
   mock-data.ts                 seed data for the demo workspace
   store.tsx                    React context + localStorage — THE SWAP POINT
@@ -75,7 +83,7 @@ supabase/
   schema.sql                   proposed tables + RLS policies
 ```
 
-Every page reads/writes through `useStore()` (`lib/store.tsx`), never through
+Every page reads/writes through `useStore()` (`src/lib/store.tsx`), never through
 `mock-data.ts` directly. That's the one file that needs to change to go from
 mock to real data — component code shouldn't need to change.
 
@@ -84,16 +92,15 @@ mock to real data — component code shouldn't need to change.
 This zip deliberately stops short of wiring a live backend, since you said
 you'll handle connections yourself. Here's exactly where each piece plugs in:
 
-1. **Auth** — Install `@supabase/ssr` and `@supabase/supabase-js`, point them
-   at your existing (or new) Lanila Supabase project via the vars in
-   `.env.example`. If Buku Kas already has an identity table, make sure it's
+1. **Auth** — `@supabase/supabase-js` sudah terpasang; arahkan ke project Lanila
+   Supabase lewat variabel `VITE_SUPABASE_*` di `.env.local` (lihat `.env.example`). If Buku Kas already has an identity table, make sure it's
    the one referenced by `wedding_workspaces.created_by` and
    `wedding_members.profile_id` in `supabase/schema.sql` — rename the FK
    target there if it isn't called `profiles`.
 2. **Database** — Run `supabase/schema.sql` against your project (adjust the
    `profiles` table creation if it already exists). Enable RLS on every
    workspace-scoped table using the pattern shown for `wedding_tasks`.
-3. **Data layer** — Replace the body of `lib/store.tsx` with Supabase queries
+3. **Data layer** — Replace the body of `src/lib/store.tsx` with Supabase queries
    /mutations (e.g. `supabase.from('wedding_tasks').select()` inside a
    `useEffect`, and `.update()`/`.insert()` inside the mutator functions).
    Keep the same `StoreContextValue` shape so no page needs to change.
@@ -101,12 +108,12 @@ you'll handle connections yourself. Here's exactly where each piece plugs in:
    to a private Supabase Storage bucket; generate signed URLs server-side
    after checking `wedding_members` membership.
 5. **Buku Kas integration** — When a budget payment is recorded
-   (`recordBudgetPayment` in `lib/store.tsx`), also insert a row into
+   (`recordBudgetPayment` in `src/lib/store.tsx`), also insert a row into
    `financial_transactions` with `source_app = 'wedding_planner'` and
    `related_budget_item_id` set, so it's traceable back to its origin without
    duplicating the transaction.
 6. **Notifications** — The `notifications` table exists in the schema but has
-   no UI yet; the "Wedding Health" panel's logic (`components/wedding/
+   no UI yet; the "Wedding Health" panel's logic (`src/components/wedding/
    WeddingHealthPanel.tsx`) is a good starting point for what should trigger
    a reminder (payment due soon, tasks piling up, etc.).
 

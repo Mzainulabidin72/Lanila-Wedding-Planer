@@ -25,8 +25,8 @@ Bukan merge UI — hanya shared Auth + `profiles`.
    ```
    Isi dengan **project Supabase Buku Kas** yang sama:
    ```
-   NEXT_PUBLIC_SUPABASE_URL=https://....supabase.co
-   NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
+   VITE_SUPABASE_URL=https://....supabase.co
+   VITE_SUPABASE_ANON_KEY=eyJ...
    ```
 
 2. Install & run:

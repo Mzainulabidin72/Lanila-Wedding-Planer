@@ -5,20 +5,55 @@ import { useStore } from "@/lib/store";
 
 const STEPS = ["Nama pasangan", "Tanggal pernikahan", "Target budget", "Jenis acara"];
 
+/** Unduh teks sebagai file (cadangan data lama). */
+function downloadTextFile(filename: string, content: string) {
+  const url = URL.createObjectURL(new Blob([content], { type: "application/json" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+const IMPORT_ERRORS: Record<string, string> = {
+  "already-has-data": "Akun ini sudah punya proyek, jadi data lama tidak diimpor agar tidak menimpa.",
+  "verification-failed": "Impor dibatalkan karena hasilnya gagal diverifikasi. Data kamu tidak diubah.",
+  "source-invalid": "Data lama tidak dapat dibaca, jadi tidak diimpor.",
+  "source-missing": "Data lama sudah tidak ada di browser ini.",
+};
+
 const INPUT_CLASS =
   "w-full rounded-md border border-surface-border px-3 py-2.5 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand";
 
 export default function OnboardingPage() {
   const navigate = useNavigate();
-  const { workspace, createWorkspace } = useStore();
+  const { workspace, createWorkspace, legacyEntries, importLegacyData, dismissLegacyData, getLegacyBackup } = useStore();
   const [step, setStep] = useState(0);
   const [error, setError] = useState("");
+  const [legacyMessage, setLegacyMessage] = useState("");
   const [form, setForm] = useState({ names: "", date: "", budget: "", type: "Akad & Resepsi" });
 
   // Satu akun hanya punya satu proyek: jika sudah ada, jangan buat lagi (dan jangan menimpanya).
   if (workspace) return <Navigate to={`/w/${workspace.id}/dashboard`} replace />;
 
   const percent = Math.round(((step + 1) / (STEPS.length + 1)) * 100);
+  const legacyEntry = legacyEntries[0];
+
+  function backupLegacy() {
+    const file = getLegacyBackup();
+    if (file) downloadTextFile(file.filename, file.content);
+  }
+
+  function importLegacy() {
+    if (!legacyEntry) return;
+    const ok = window.confirm(
+      `Impor data lama "${legacyEntry.workspaceName}" ke akun kamu?\n\nData lama tetap disimpan sebagai cadangan dan tidak dihapus.`
+    );
+    if (!ok) return;
+    const result = importLegacyData(legacyEntry.sourceKey);
+    if (!result.ok) setLegacyMessage(IMPORT_ERRORS[result.reason] ?? "Data lama tidak dapat diimpor.");
+    // jika berhasil, akun ini sudah punya proyek dan halaman otomatis dialihkan ke dashboard
+  }
 
   function next() {
     if (step === 0 && !form.names.trim()) {
@@ -50,6 +85,34 @@ export default function OnboardingPage() {
             </p>
             <ProgressBar percent={percent} className="mt-2" />
           </div>
+
+          {step === 0 && legacyEntry ? (
+            <div role="region" aria-label="Data lama terdeteksi" className="space-y-2 rounded-md border border-surface-border bg-surface-muted p-3 text-sm">
+              <p className="font-medium text-ink">Ada data dari versi lama aplikasi di browser ini</p>
+              <p className="text-ink-soft">
+                Proyek “{legacyEntry.workspaceName}” ({legacyEntry.counts.vendors} vendor, {legacyEntry.counts.guests} tamu,{" "}
+                {legacyEntry.counts.tasks} tugas). Data ini tidak terhubung ke akun mana pun, jadi{" "}
+                <strong>tidak otomatis menjadi milik akunmu</strong> dan tidak dipakai kecuali kamu memilih
+                mengimpornya. Bisa jadi ini hanya data contoh.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="secondary" size="sm" onClick={backupLegacy}>
+                  Unduh cadangan
+                </Button>
+                <Button variant="secondary" size="sm" onClick={importLegacy}>
+                  Impor ke akun ini
+                </Button>
+                <Button variant="ghost" size="sm" onClick={dismissLegacyData}>
+                  Jangan impor
+                </Button>
+              </div>
+              {legacyMessage ? (
+                <p role="alert" className="text-danger">
+                  {legacyMessage}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
 
           <h2 className="text-lg font-semibold text-ink">{STEPS[step]}</h2>
 

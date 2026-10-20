@@ -14,7 +14,16 @@
 
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import * as actions from "./store-actions";
-import { emptyUserData, loadUserData, saveUserData, StorageLike, UserData } from "./user-storage";
+import * as legacy from "./legacy-data";
+import {
+  emptyUserData,
+  getBrowserStorage,
+  isOwnStorageEvent,
+  loadUserData,
+  saveUserData,
+  StorageLike,
+  UserData,
+} from "./user-storage";
 import type { WeddingWorkspace } from "./types";
 
 type StoreData = Omit<UserData, "version">;
@@ -28,17 +37,19 @@ interface StoreContextValue extends StoreData {
   updateVendorStatus: (vendorId: string, status: Parameters<typeof actions.updateVendorStatus>[2]) => void;
   updateGuestRsvp: (guestId: string, rsvp: Parameters<typeof actions.updateGuestRsvp>[2]) => void;
   updateSeserahanStatus: (itemId: string, status: Parameters<typeof actions.updateSeserahanStatus>[2]) => void;
+
+  // --- data LAMA dari versi sebelum data dipisah per akun (kepemilikan tidak terverifikasi) ---
+  /** Data lama di browser ini yang boleh ditawarkan ke akun ini. Tidak dipakai kecuali pengguna memilih impor. */
+  legacyEntries: legacy.LegacySummary[];
+  /** Impor atas keputusan pengguna. Hanya jika akun ini belum punya proyek; tidak menimpa apa pun. */
+  importLegacyData: (sourceKey: string) => legacy.ImportResult;
+  /** Pengguna memilih tidak mengimpor: tawaran untuk isi yang sama tidak muncul lagi di akun ini. */
+  dismissLegacyData: () => void;
+  /** Isi file cadangan data lama untuk diunduh. */
+  getLegacyBackup: () => legacy.BackupFile | null;
 }
 
 const StoreContext = createContext<StoreContextValue | null>(null);
-
-function defaultStorage(): StorageLike | null {
-  try {
-    return typeof window !== "undefined" ? window.localStorage : null;
-  } catch {
-    return null; // akses storage diblokir browser
-  }
-}
 
 interface StoreProviderProps {
   /** id akun yang sedang login (dari sesi terverifikasi), bukan input bebas. */
@@ -51,13 +62,34 @@ interface StoreProviderProps {
 }
 
 export function StoreProvider({ userId, actorName, storage, children }: StoreProviderProps) {
-  const store = storage === undefined ? defaultStorage() : storage;
+  const store = storage === undefined ? getBrowserStorage() : storage;
   const [state, setState] = useState<UserData>(() => loadUserData(store, userId));
   const stateRef = useRef(state);
+  const [legacyEntries, setLegacyEntries] = useState<legacy.LegacySummary[]>(() => legacy.scanLegacy(store, userId));
 
   useEffect(() => {
     saveUserData(store, userId, state);
   }, [store, userId, state]);
+
+  // Cadangan data lama: hanya SALINAN ke arsip terisolasi, sumber tidak diubah/dihapus.
+  // StoreProvider hanya terpasang saat ada sesi login yang valid.
+  useEffect(() => {
+    legacy.archiveLegacyData(store);
+  }, [store]);
+
+  // Tab lain mengubah data akun yang SAMA: muat ulang supaya tab ini tidak menimpanya dengan state basi.
+  // (Perubahan akun di tab lain ditangani lewat sesi Supabase + key={user.id} di UserScopedStore.)
+  useEffect(() => {
+    if (typeof window === "undefined" || !store) return;
+    const onStorage = (e: StorageEvent) => {
+      if (e.storageArea !== store || !isOwnStorageEvent(e.key, userId)) return;
+      const next = loadUserData(store, userId);
+      stateRef.current = next;
+      setState(next);
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, [store, userId]);
 
   // Semua perubahan lewat sini: dihitung dari state terbaru (anti lost-update / klik ganda).
   const commit = useCallback((fn: (current: UserData) => UserData) => {
@@ -85,8 +117,25 @@ export function StoreProvider({ userId, actorName, storage, children }: StorePro
       updateGuestRsvp: (guestId, rsvp) => void commit((s) => actions.updateGuestRsvp(s, guestId, rsvp, ctx())),
       updateSeserahanStatus: (itemId, status) =>
         void commit((s) => actions.updateSeserahanStatus(s, itemId, status, ctx())),
+
+      legacyEntries,
+      importLegacyData: (sourceKey) => {
+        const result = legacy.importLegacy(store, userId, sourceKey);
+        if (result.ok) {
+          const next = loadUserData(store, userId); // sinkronkan memori dengan hasil impor yang sudah diverifikasi
+          stateRef.current = next;
+          setState(next);
+          setLegacyEntries([]);
+        }
+        return result;
+      },
+      dismissLegacyData: () => {
+        legacy.dismissLegacy(store, userId);
+        setLegacyEntries([]);
+      },
+      getLegacyBackup: () => legacy.buildBackupFile(store),
     };
-  }, [state, userId, actorName, commit]);
+  }, [state, userId, actorName, commit, store, legacyEntries]);
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
 }

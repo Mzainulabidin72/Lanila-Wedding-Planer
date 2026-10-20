@@ -84,3 +84,34 @@ select policyname, cmd, roles from pg_policies where schemaname = 'storage' orde
 -- [9] Pastikan nama baru "wp_*" belum dipakai (hasil diharapkan: kosong sebelum skrip 01 dijalankan)
 select table_name from information_schema.tables
 where table_schema = 'public' and table_name like 'wp\_%';
+
+-- [10] FOKUS tabel `profiles`: satu-satunya tabel data pengguna yang dipakai aplikasi ini sekarang
+--      (dipakai bersama Lanila Buku Kas). Jalankan satu per satu.
+-- 10a. Kolom
+select column_name, data_type, is_nullable, column_default
+from information_schema.columns
+where table_schema = 'public' and table_name = 'profiles'
+order by ordinal_position;
+
+-- 10b. RLS aktif? (rls_enabled = false berarti SIAPA PUN dengan anon key bisa membaca/menulis semua profil)
+select c.relname, c.relrowsecurity as rls_enabled, c.relforcerowsecurity as rls_forced
+from pg_class c where c.oid = to_regclass('public.profiles');
+
+-- 10c. Policy yang ada. PERHATIAN: policy bersifat PERMISSIVE secara bawaan dan saling di-OR;
+--      satu policy longgar (mis. using (true)) membuat policy ketat lain tidak berguna.
+select policyname, cmd, roles, permissive, qual as using_expr, with_check
+from pg_policies where schemaname = 'public' and tablename = 'profiles'
+order by cmd, policyname;
+
+-- 10d. Hak akses langsung untuk anon / authenticated
+select grantee, privilege_type
+from information_schema.role_table_grants
+where table_schema = 'public' and table_name = 'profiles' and grantee in ('anon', 'authenticated')
+order by grantee, privilege_type;
+
+-- 10e. Trigger / fungsi yang membuat baris profiles saat user mendaftar (jika ada)
+select t.tgname as trigger_name, c.relname as on_table, p.proname as function_name, p.prosecdef as security_definer
+from pg_trigger t
+join pg_class c on c.oid = t.tgrelid
+join pg_proc p on p.oid = t.tgfoid
+where not t.tgisinternal and (c.relname = 'profiles' or (c.relnamespace = 'auth'::regnamespace and c.relname = 'users'));

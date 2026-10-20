@@ -9,6 +9,8 @@ import React, {
 } from "react";
 import type { AuthError, Session, User } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
+import { profileActionFor } from "./auth-events";
+import { getDisplayName } from "./display-name";
 
 export interface Profile {
   id: string;
@@ -73,18 +75,7 @@ function toSignUpMessage(error: AuthError): string {
 
 export const AuthContext = createContext<AuthContextValue | null>(null);
 
-/**
- * Nama yang ditampilkan untuk akun aktif. Urutan: profil akun → metadata pendaftaran →
- * bagian depan email. Tidak pernah memakai nama akun lain atau nama contoh.
- */
-export function getDisplayName(profile: Profile | null, user: User | null): string {
-  const fromProfile = typeof profile?.full_name === "string" ? profile.full_name.trim() : "";
-  if (fromProfile) return fromProfile;
-  const meta = user?.user_metadata?.full_name;
-  const fromMeta = typeof meta === "string" ? meta.trim() : "";
-  if (fromMeta) return fromMeta;
-  return user?.email?.split("@")[0] || "Pengguna";
-}
+export { getDisplayName };
 
 async function fetchProfile(userId: string): Promise<Profile | null> {
   const { data, error } = await supabase
@@ -132,16 +123,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   // Nomor permintaan profil terbaru: hasil permintaan lama (akun sebelumnya) diabaikan.
   const profileTicket = useRef(0);
+  // id akun yang profilnya sudah termuat (untuk memutuskan perlu muat ulang atau tidak)
+  const profileLoadedFor = useRef<string | null>(null);
 
   const loadProfile = useCallback(async (userId: string) => {
     const ticket = ++profileTicket.current;
     const p = await fetchProfile(userId);
     if (ticket !== profileTicket.current) return; // sudah ada permintaan lebih baru / akun berganti
+    profileLoadedFor.current = p ? userId : null;
     setProfile(p);
   }, []);
 
   const clearProfile = useCallback(() => {
     profileTicket.current++; // batalkan permintaan yang masih berjalan
+    profileLoadedFor.current = null;
     setProfile(null);
   }, []);
 
@@ -169,14 +164,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } = supabase.auth.onAuthStateChange((event, s) => {
       setSession(s);
       setLoading(false);
-      if (!s?.user) {
+      // SIGNED_IN, SIGNED_OUT, TOKEN_REFRESHED, USER_UPDATED, INITIAL_SESSION, dst.:
+      // lihat auth-events.ts untuk aturan tiap event.
+      const uid = s?.user?.id ?? null;
+      const action = profileActionFor(event, uid !== null, uid !== null && profileLoadedFor.current === uid);
+      if (action === "clear") {
         clearProfile();
         return;
       }
-      if (event === "TOKEN_REFRESHED") return; // akun sama, profil tidak perlu dimuat ulang
+      if (action === "keep" || !uid) return;
       // JANGAN memanggil Supabase (await) langsung di dalam callback ini: bisa deadlock
       // dan membuat login menggantung. Tunda ke tick berikutnya.
-      const uid = s.user.id;
       setTimeout(() => {
         if (mounted) void loadProfile(uid);
       }, 0);

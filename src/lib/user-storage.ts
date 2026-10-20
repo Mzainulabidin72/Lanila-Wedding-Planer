@@ -40,6 +40,41 @@ export interface StorageLike {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
   removeItem(key: string): void;
+  /** Opsional: window.localStorage punya keduanya. Dipakai untuk mendeteksi data lama. */
+  readonly length?: number;
+  key?(index: number): string | null;
+}
+
+/** localStorage browser, atau null jika tidak tersedia / diblokir (mis. SSR, mode privat ketat). */
+export function getBrowserStorage(): StorageLike | null {
+  try {
+    return typeof window !== "undefined" ? window.localStorage : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Semua key di storage (kosong jika storage tidak mendukung enumerasi). */
+export function listStorageKeys(storage: StorageLike | null): string[] {
+  if (!storage || typeof storage.length !== "number" || typeof storage.key !== "function") return [];
+  const keys: string[] = [];
+  try {
+    for (let i = 0; i < storage.length; i++) {
+      const k = storage.key(i);
+      if (k) keys.push(k);
+    }
+  } catch {
+    return [];
+  }
+  return keys;
+}
+
+/**
+ * Apakah event "storage" dari tab lain menyangkut data akun ini?
+ * key === null berarti localStorage.clear() di tab lain.
+ */
+export function isOwnStorageEvent(eventKey: string | null, userId: string): boolean {
+  return eventKey === null || eventKey === storageKey(userId);
 }
 
 const ARRAY_FIELDS = [
@@ -103,7 +138,11 @@ export function saveUserData(storage: StorageLike | null, userId: string, data: 
   // Pengaman terakhir: jangan pernah menulis data yang pemiliknya bukan userId ini.
   if (data.workspace && data.workspace.ownerId !== userId) return;
   try {
-    storage.setItem(storageKey(userId), JSON.stringify(data));
+    const key = storageKey(userId);
+    const serialized = JSON.stringify(data);
+    // Jangan menulis jika isinya sama: mencegah "gema" antar-tab dan tulis ulang yang sia-sia.
+    if (storage.getItem(key) === serialized) return;
+    storage.setItem(key, serialized);
   } catch {
     // kuota penuh / mode privat: abaikan, data tetap ada di memori selama sesi
   }

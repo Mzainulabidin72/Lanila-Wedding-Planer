@@ -1,3 +1,11 @@
+-- #############################################################################
+-- STATUS: OPSIONAL / DITUNDA. JANGAN DIJALANKAN kecuali sudah diputuskan memindahkan
+-- data pernikahan ke Supabase. Saat ini aplikasi menyimpan data pernikahan di
+-- localStorage per akun dan TIDAK memakai tabel wp_* ini. Tabel Supabase yang benar-benar
+-- dipakai aplikasi hanya `profiles` (lihat 00_audit_readonly.sql blok [10] dan
+-- 03_profiles_rls_REVIEW.sql).
+-- #############################################################################
+
 -- =============================================================================
 -- LANILA WEDDING PLANNER: ISOLASI DATA PER AKUN (user_id + Row Level Security)
 -- =============================================================================

@@ -1,9 +1,9 @@
-import { lazy, Suspense, type ReactNode } from "react";
+import { lazy, Suspense } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
-import { AuthProvider, getDisplayName, useAuth } from "@/lib/auth-context";
-import { StoreProvider } from "@/lib/store";
+import { AuthProvider } from "@/lib/auth-context";
 import { isSupabaseConfigured } from "@/lib/supabase";
 import { AuthGate } from "@/components/AuthGate";
+import { UserScopedStore } from "@/components/UserScopedStore";
 import WorkspaceLayout from "@/layouts/WorkspaceLayout";
 import ConfigMissingPage from "@/pages/ConfigMissingPage";
 
@@ -27,21 +27,6 @@ const AcaraPage = lazy(() => import("@/pages/workspace/AcaraPage"));
 const DokumenPage = lazy(() => import("@/pages/workspace/DokumenPage"));
 const SettingsPage = lazy(() => import("@/pages/workspace/SettingsPage"));
 const AccountSettingsPage = lazy(() => import("@/pages/workspace/AccountSettingsPage"));
-
-/**
- * Memasang StoreProvider KHUSUS untuk akun yang sedang login. key={user.id} membuat React
- * membuang seluruh state akun sebelumnya saat logout atau ganti akun, jadi data akun lama
- * tidak pernah terlihat oleh akun baru.
- */
-function UserScopedStore({ children }: { children: ReactNode }) {
-  const { user, profile } = useAuth();
-  if (!user) return <>{children}</>;
-  return (
-    <StoreProvider key={user.id} userId={user.id} actorName={getDisplayName(profile, user)}>
-      {children}
-    </StoreProvider>
-  );
-}
 
 function PageFallback() {
   return (

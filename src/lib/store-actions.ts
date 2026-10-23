@@ -4,6 +4,7 @@
  */
 
 import { formatRupiah } from "./derive";
+import { validateGuestInput, type GuestActionError, type GuestErrors, type RawGuestInput } from "./guests";
 import { buildStarterStages } from "./templates";
 import type { ActivityLogEntry, Guest, PreparationStage, SeserahanItem, Vendor, WeddingTask, WeddingWorkspace } from "./types";
 import type { UserData } from "./user-storage";
@@ -121,4 +122,48 @@ export function updateSeserahanStatus(data: UserData, itemId: string, status: Se
   if (!item) return data;
   const seserahan = data.seserahan.map((it) => (it.id === itemId ? { ...it, status } : it));
   return withActivity({ ...data, seserahan }, ctx, status === "dibeli" ? "menandai dibeli" : "memperbarui status", `Seserahan — ${item.name}`);
+}
+
+// ---------------------------------------------------------------- tamu (tambah / ubah / hapus)
+
+export type { GuestActionError };
+
+export type GuestActionResult =
+  | { ok: true; data: UserData; guest: Guest }
+  | { ok: false; error: GuestActionError; errors?: GuestErrors };
+
+export function addGuest(data: UserData, raw: RawGuestInput, ctx: ActionContext): GuestActionResult {
+  if (!data.workspace) return { ok: false, error: "no-workspace" };
+  const { errors, value } = validateGuestInput(raw, data.guests);
+  if (!value) return { ok: false, error: "validation", errors };
+  const guest: Guest = { id: newId("g"), workspaceId: data.workspace.id, ...value };
+  const next = withActivity({ ...data, guests: [...data.guests, guest] }, ctx, "menambahkan tamu", guest.name);
+  return { ok: true, data: next, guest };
+}
+
+/** Mengubah tamu; kolom yang tidak ada di form (relationship, table, giftStatus) dipertahankan. */
+export function updateGuest(data: UserData, guestId: string, raw: RawGuestInput, ctx: ActionContext): GuestActionResult {
+  const current = data.guests.find((g) => g.id === guestId);
+  if (!current) return { ok: false, error: "not-found" };
+  const { errors, value } = validateGuestInput(raw, data.guests, guestId);
+  if (!value) return { ok: false, error: "validation", errors };
+  const guest: Guest = { ...current, ...value, phone: value.phone, notes: value.notes };
+  const guests = data.guests.map((g) => (g.id === guestId ? guest : g));
+  return { ok: true, data: withActivity({ ...data, guests }, ctx, "mengubah data tamu", guest.name), guest };
+}
+
+export function deleteGuest(data: UserData, guestId: string, ctx: ActionContext): GuestActionResult {
+  const guest = data.guests.find((g) => g.id === guestId);
+  if (!guest) return { ok: false, error: "not-found" };
+  const guests = data.guests.filter((g) => g.id !== guestId);
+  return { ok: true, data: withActivity({ ...data, guests }, ctx, "menghapus tamu", guest.name), guest };
+}
+
+/** Ubah status konfirmasi saja (aksi cepat di daftar). */
+export function setGuestRsvp(data: UserData, guestId: string, rsvp: Guest["rsvp"], ctx: ActionContext): GuestActionResult {
+  const guest = data.guests.find((g) => g.id === guestId);
+  if (!guest) return { ok: false, error: "not-found" };
+  const updated: Guest = { ...guest, rsvp };
+  const guests = data.guests.map((g) => (g.id === guestId ? updated : g));
+  return { ok: true, data: withActivity({ ...data, guests }, ctx, "memperbarui RSVP", guest.name), guest: updated };
 }

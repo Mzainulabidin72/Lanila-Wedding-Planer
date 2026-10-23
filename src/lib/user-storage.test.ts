@@ -120,3 +120,28 @@ describe("event storage dari tab lain", () => {
     expect(listStorageKeys({ getItem: () => null, setItem() {}, removeItem() {} })).toEqual([]);
   });
 });
+
+describe("saveUserData melaporkan hasil penyimpanan", () => {
+  it("true jika tersimpan, dan true jika isinya sudah sama", () => {
+    const st = createMemoryStorage();
+    const d = project(A, "Proyek Alpha");
+    expect(saveUserData(st, A, d)).toBe(true);
+    expect(saveUserData(st, A, d)).toBe(true);
+  });
+
+  it("false jika storage tidak ada, tanpa akun, atau pemilik data tidak cocok", () => {
+    expect(saveUserData(null, A, project(A, "X"))).toBe(false);
+    expect(saveUserData(createMemoryStorage(), "", project(A, "X"))).toBe(false);
+    expect(saveUserData(createMemoryStorage(), B, project(A, "X"))).toBe(false);
+  });
+
+  it("false jika penulisan melempar error (kuota penuh / diblokir)", () => {
+    const full = { getItem: () => null, removeItem() {}, setItem() { throw new Error("QuotaExceededError"); } };
+    expect(saveUserData(full, A, project(A, "X"))).toBe(false);
+  });
+
+  it("false jika storage menolak menulis secara diam-diam (data tidak benar-benar tersimpan)", () => {
+    const silent = { getItem: () => null, removeItem() {}, setItem() {} };
+    expect(saveUserData(silent, A, project(A, "X"))).toBe(false);
+  });
+});

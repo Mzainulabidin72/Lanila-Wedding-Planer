@@ -1,4 +1,5 @@
 import { Link, useLocation } from "react-router-dom";
+import { LanilaAppIcon } from "@/components/brand/LanilaAppIcon";
 import clsx from "clsx";
 import {
   LayoutDashboard,
@@ -73,11 +74,13 @@ export function Sidebar({ workspaceId, workspaceName }: { workspaceId: string; w
   return (
     <aside className="hidden w-64 shrink-0 flex-col border-r border-surface-border bg-surface-card px-4 py-5 md:flex">
       <div className="mb-6 px-2">
-        <div className="flex items-center gap-2 text-brand-dark">
-          <Heart size={18} className="fill-brand text-brand" />
-          <span className="text-lg font-semibold">Lanila</span>
+        <div className="flex items-center gap-2.5">
+          <LanilaAppIcon size={36} />
+          <div className="leading-none">
+            <span className="block text-[1.15rem] font-extrabold tracking-tight text-lanila-navy">Lanila</span>
+            <span className="mt-1 block text-xs text-ink-faint">Wedding Planner</span>
+          </div>
         </div>
-        <p className="mt-0.5 text-xs text-ink-faint">Wedding Planner</p>
         <p className="mt-3 truncate text-sm font-medium text-ink" title={workspaceName}>
           {workspaceName}
         </p>

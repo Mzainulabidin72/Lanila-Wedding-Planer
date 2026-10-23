@@ -4,6 +4,8 @@ interface LanilaMarkProps {
   /** Lebar dan tinggi dalam px (logo berbentuk persegi). */
   size?: number;
   className?: string;
+  /** "gradient" = logo master biru→ungu; "white" = putih polos (untuk di atas ikon aplikasi berwarna). */
+  variant?: "gradient" | "white";
 }
 
 /**
@@ -11,7 +13,8 @@ interface LanilaMarkProps {
  * brand guide supaya tetap tajam di ukuran berapa pun.
  * Gradien memakai id unik (useId) supaya aman dipakai berkali-kali dalam satu halaman.
  */
-export function LanilaMark({ size = 40, className }: LanilaMarkProps) {
+export function LanilaMark({ size = 40, className, variant = "gradient" }: LanilaMarkProps) {
+  const white = variant === "white";
   const uid = useId().replace(/:/g, "");
   const tall = `${uid}-tall`;
   const low = `${uid}-low`;
@@ -36,11 +39,12 @@ export function LanilaMark({ size = 40, className }: LanilaMarkProps) {
         </linearGradient>
       </defs>
       <path
-        fill={`url(#${tall})`}
+        fill={white ? "#FFFFFF" : `url(#${tall})`}
         d="M325 75 L152 177 C104 205 80 236 80 282 L80 538 C80 600 118 642 165 665 L300 522 C318 502 325 486 325 462 Z"
       />
       <path
-        fill={`url(#${low})`}
+        fill={white ? "#FFFFFF" : `url(#${low})`}
+        fillOpacity={white ? 0.82 : 1}
         d="M195 683 L318 543 C372 478 420 437 480 437 L622 437 C592 520 548 590 492 632 C446 668 400 688 346 688 Z"
       />
     </svg>

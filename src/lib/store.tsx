@@ -24,9 +24,18 @@ import {
   StorageLike,
   UserData,
 } from "./user-storage";
-import type { WeddingWorkspace } from "./types";
+import type { GuestErrors, RawGuestInput } from "./guests";
+import type { Guest, RsvpStatus, WeddingWorkspace } from "./types";
 
 type StoreData = Omit<UserData, "version">;
+
+/**
+ * Hasil operasi tamu. ok:true HANYA jika data benar-benar sudah tersimpan di penyimpanan.
+ * error "storage" = gagal menyimpan (penyimpanan penuh/diblokir); data TIDAK berubah.
+ */
+export type GuestResult =
+  | { ok: true; guest: Guest }
+  | { ok: false; error: actions.GuestActionError; errors?: GuestErrors };
 
 interface StoreContextValue extends StoreData {
   /** Membuat proyek pernikahan milik akun ini. Mengembalikan proyek (atau yang sudah ada). */
@@ -37,6 +46,12 @@ interface StoreContextValue extends StoreData {
   updateVendorStatus: (vendorId: string, status: Parameters<typeof actions.updateVendorStatus>[2]) => void;
   updateGuestRsvp: (guestId: string, rsvp: Parameters<typeof actions.updateGuestRsvp>[2]) => void;
   updateSeserahanStatus: (itemId: string, status: Parameters<typeof actions.updateSeserahanStatus>[2]) => void;
+
+  // --- daftar tamu: tulis dulu ke penyimpanan, baru ubah state; sukses hanya jika tersimpan ---
+  addGuest: (raw: RawGuestInput) => GuestResult;
+  updateGuest: (guestId: string, raw: RawGuestInput) => GuestResult;
+  deleteGuest: (guestId: string) => GuestResult;
+  setGuestRsvp: (guestId: string, rsvp: RsvpStatus) => GuestResult;
 
   // --- data LAMA dari versi sebelum data dipisah per akun (kepemilikan tidak terverifikasi) ---
   /** Data lama di browser ini yang boleh ditawarkan ke akun ini. Tidak dipakai kecuali pengguna memilih impor. */
@@ -101,6 +116,19 @@ export function StoreProvider({ userId, actorName, storage, children }: StorePro
     return next;
   }, []);
 
+  // Operasi yang hasilnya dilaporkan ke pengguna: simpan DULU, ubah state HANYA jika penyimpanan berhasil.
+  const run = useCallback(
+    (compute: (current: UserData) => actions.GuestActionResult): GuestResult => {
+      const result = compute(stateRef.current);
+      if (!result.ok) return result;
+      if (!saveUserData(store, userId, result.data)) return { ok: false, error: "storage" };
+      stateRef.current = result.data;
+      setState(result.data);
+      return { ok: true, guest: result.guest };
+    },
+    [store, userId]
+  );
+
   const value = useMemo<StoreContextValue>(() => {
     const ctx = (): actions.ActionContext => ({ actorName });
     const { version: _version, ...data } = state;
@@ -117,6 +145,11 @@ export function StoreProvider({ userId, actorName, storage, children }: StorePro
       updateGuestRsvp: (guestId, rsvp) => void commit((s) => actions.updateGuestRsvp(s, guestId, rsvp, ctx())),
       updateSeserahanStatus: (itemId, status) =>
         void commit((s) => actions.updateSeserahanStatus(s, itemId, status, ctx())),
+
+      addGuest: (raw) => run((s) => actions.addGuest(s, raw, ctx())),
+      updateGuest: (guestId, raw) => run((s) => actions.updateGuest(s, guestId, raw, ctx())),
+      deleteGuest: (guestId) => run((s) => actions.deleteGuest(s, guestId, ctx())),
+      setGuestRsvp: (guestId, rsvp) => run((s) => actions.setGuestRsvp(s, guestId, rsvp, ctx())),
 
       legacyEntries,
       importLegacyData: (sourceKey) => {
@@ -135,7 +168,7 @@ export function StoreProvider({ userId, actorName, storage, children }: StorePro
       },
       getLegacyBackup: () => legacy.buildBackupFile(store),
     };
-  }, [state, userId, actorName, commit, store, legacyEntries]);
+  }, [state, userId, actorName, commit, run, store, legacyEntries]);
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
 }

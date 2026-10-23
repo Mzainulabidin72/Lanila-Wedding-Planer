@@ -133,17 +133,24 @@ export function loadUserData(storage: StorageLike | null, userId: string): UserD
   }
 }
 
-export function saveUserData(storage: StorageLike | null, userId: string, data: UserData): void {
-  if (!storage || !userId) return;
+/**
+ * Menyimpan data akun. Mengembalikan true HANYA jika data benar-benar tersimpan (atau sudah sama),
+ * false jika gagal (storage tidak ada/diblokir, kuota penuh, atau pemilik data tidak cocok).
+ * Pemanggil yang ingin menyatakan "berhasil disimpan" wajib memeriksa nilai ini.
+ */
+export function saveUserData(storage: StorageLike | null, userId: string, data: UserData): boolean {
+  if (!storage || !userId) return false;
   // Pengaman terakhir: jangan pernah menulis data yang pemiliknya bukan userId ini.
-  if (data.workspace && data.workspace.ownerId !== userId) return;
+  if (data.workspace && data.workspace.ownerId !== userId) return false;
   try {
     const key = storageKey(userId);
     const serialized = JSON.stringify(data);
     // Jangan menulis jika isinya sama: mencegah "gema" antar-tab dan tulis ulang yang sia-sia.
-    if (storage.getItem(key) === serialized) return;
+    if (storage.getItem(key) === serialized) return true;
     storage.setItem(key, serialized);
+    // Baca ulang: beberapa storage menolak menulis tanpa melempar error.
+    return storage.getItem(key) === serialized;
   } catch {
-    // kuota penuh / mode privat: abaikan, data tetap ada di memori selama sesi
+    return false; // kuota penuh / mode privat / diblokir
   }
 }

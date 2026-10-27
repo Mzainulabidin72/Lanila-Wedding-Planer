@@ -25,9 +25,15 @@ import {
   UserData,
 } from "./user-storage";
 import type { GuestErrors, RawGuestInput } from "./guests";
-import type { Guest, RsvpStatus, WeddingWorkspace } from "./types";
+import type { RawSeserahanInput, SeserahanErrors, SeserahanStatus } from "./seserahan";
+import type { Guest, RsvpStatus, SeserahanItem, WeddingWorkspace } from "./types";
 
 type StoreData = Omit<UserData, "version">;
+
+/** Hasil operasi item seserahan; aturannya sama dengan GuestResult (ok:true = sudah tersimpan). */
+export type ItemResult =
+  | { ok: true; item: SeserahanItem }
+  | { ok: false; error: actions.ItemActionError; errors?: SeserahanErrors };
 
 /**
  * Hasil operasi tamu. ok:true HANYA jika data benar-benar sudah tersimpan di penyimpanan.
@@ -52,6 +58,12 @@ interface StoreContextValue extends StoreData {
   updateGuest: (guestId: string, raw: RawGuestInput) => GuestResult;
   deleteGuest: (guestId: string) => GuestResult;
   setGuestRsvp: (guestId: string, rsvp: RsvpStatus) => GuestResult;
+
+  // --- seserahan: tulis dulu ke penyimpanan, baru ubah state; sukses hanya jika tersimpan ---
+  addSeserahan: (raw: RawSeserahanInput) => ItemResult;
+  updateSeserahan: (itemId: string, raw: RawSeserahanInput) => ItemResult;
+  deleteSeserahan: (itemId: string) => ItemResult;
+  setSeserahanStatus: (itemId: string, status: SeserahanStatus) => ItemResult;
 
   // --- data LAMA dari versi sebelum data dipisah per akun (kepemilikan tidak terverifikasi) ---
   /** Data lama di browser ini yang boleh ditawarkan ke akun ini. Tidak dipakai kecuali pengguna memilih impor. */
@@ -117,16 +129,34 @@ export function StoreProvider({ userId, actorName, storage, children }: StorePro
   }, []);
 
   // Operasi yang hasilnya dilaporkan ke pengguna: simpan DULU, ubah state HANYA jika penyimpanan berhasil.
+  const persistThenCommit = useCallback(
+    (next: UserData): boolean => {
+      if (!saveUserData(store, userId, next)) return false; // gagal: state memori TIDAK berubah
+      stateRef.current = next;
+      setState(next);
+      return true;
+    },
+    [store, userId]
+  );
+
   const run = useCallback(
     (compute: (current: UserData) => actions.GuestActionResult): GuestResult => {
       const result = compute(stateRef.current);
       if (!result.ok) return result;
-      if (!saveUserData(store, userId, result.data)) return { ok: false, error: "storage" };
-      stateRef.current = result.data;
-      setState(result.data);
+      if (!persistThenCommit(result.data)) return { ok: false, error: "storage" };
       return { ok: true, guest: result.guest };
     },
-    [store, userId]
+    [persistThenCommit]
+  );
+
+  const runItem = useCallback(
+    (compute: (current: UserData) => actions.ItemActionResult): ItemResult => {
+      const result = compute(stateRef.current);
+      if (!result.ok) return result;
+      if (!persistThenCommit(result.data)) return { ok: false, error: "storage" };
+      return { ok: true, item: result.item };
+    },
+    [persistThenCommit]
   );
 
   const value = useMemo<StoreContextValue>(() => {
@@ -151,6 +181,11 @@ export function StoreProvider({ userId, actorName, storage, children }: StorePro
       deleteGuest: (guestId) => run((s) => actions.deleteGuest(s, guestId, ctx())),
       setGuestRsvp: (guestId, rsvp) => run((s) => actions.setGuestRsvp(s, guestId, rsvp, ctx())),
 
+      addSeserahan: (raw) => runItem((s) => actions.addSeserahan(s, raw, ctx())),
+      updateSeserahan: (itemId, raw) => runItem((s) => actions.updateSeserahan(s, itemId, raw, ctx())),
+      deleteSeserahan: (itemId) => runItem((s) => actions.deleteSeserahan(s, itemId, ctx())),
+      setSeserahanStatus: (itemId, status) => runItem((s) => actions.setSeserahanStatus(s, itemId, status, ctx())),
+
       legacyEntries,
       importLegacyData: (sourceKey) => {
         const result = legacy.importLegacy(store, userId, sourceKey);
@@ -168,7 +203,7 @@ export function StoreProvider({ userId, actorName, storage, children }: StorePro
       },
       getLegacyBackup: () => legacy.buildBackupFile(store),
     };
-  }, [state, userId, actorName, commit, run, store, legacyEntries]);
+  }, [state, userId, actorName, commit, run, runItem, store, legacyEntries]);
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
 }

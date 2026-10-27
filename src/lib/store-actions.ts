@@ -5,6 +5,7 @@
 
 import { formatRupiah } from "./derive";
 import { validateGuestInput, type GuestActionError, type GuestErrors, type RawGuestInput } from "./guests";
+import { validateSeserahanInput, type ItemActionError, type RawSeserahanInput, type SeserahanErrors } from "./seserahan";
 import { buildStarterStages } from "./templates";
 import type { ActivityLogEntry, Guest, PreparationStage, SeserahanItem, Vendor, WeddingTask, WeddingWorkspace } from "./types";
 import type { UserData } from "./user-storage";
@@ -166,4 +167,48 @@ export function setGuestRsvp(data: UserData, guestId: string, rsvp: Guest["rsvp"
   const updated: Guest = { ...guest, rsvp };
   const guests = data.guests.map((g) => (g.id === guestId ? updated : g));
   return { ok: true, data: withActivity({ ...data, guests }, ctx, "memperbarui RSVP", guest.name), guest: updated };
+}
+
+// ---------------------------------------------------------------- seserahan (tambah / ubah / hapus)
+
+export type { ItemActionError };
+
+export type ItemActionResult =
+  | { ok: true; data: UserData; item: SeserahanItem }
+  | { ok: false; error: ItemActionError; errors?: SeserahanErrors };
+
+export function addSeserahan(data: UserData, raw: RawSeserahanInput, ctx: ActionContext): ItemActionResult {
+  if (!data.workspace) return { ok: false, error: "no-workspace" };
+  const { errors, value } = validateSeserahanInput(raw);
+  if (!value) return { ok: false, error: "validation", errors };
+  const item: SeserahanItem = { id: newId("s"), workspaceId: data.workspace.id, ...value };
+  const next = withActivity({ ...data, seserahan: [...data.seserahan, item] }, ctx, "menambahkan item seserahan", item.name);
+  return { ok: true, data: next, item };
+}
+
+/** Mengubah item; kolom yang tidak diketahui form tetap dipertahankan (spread dari data lama). */
+export function updateSeserahan(data: UserData, itemId: string, raw: RawSeserahanInput, ctx: ActionContext): ItemActionResult {
+  const current = data.seserahan.find((i) => i.id === itemId);
+  if (!current) return { ok: false, error: "not-found" };
+  const { errors, value } = validateSeserahanInput(raw);
+  if (!value) return { ok: false, error: "validation", errors };
+  const item: SeserahanItem = { ...current, ...value, purchaseDate: value.purchaseDate, notes: value.notes };
+  const seserahan = data.seserahan.map((i) => (i.id === itemId ? item : i));
+  return { ok: true, data: withActivity({ ...data, seserahan }, ctx, "mengubah item seserahan", item.name), item };
+}
+
+export function deleteSeserahan(data: UserData, itemId: string, ctx: ActionContext): ItemActionResult {
+  const item = data.seserahan.find((i) => i.id === itemId);
+  if (!item) return { ok: false, error: "not-found" };
+  const seserahan = data.seserahan.filter((i) => i.id !== itemId);
+  return { ok: true, data: withActivity({ ...data, seserahan }, ctx, "menghapus item seserahan", item.name), item };
+}
+
+/** Ubah status persiapan saja (aksi cepat di daftar). */
+export function setSeserahanStatus(data: UserData, itemId: string, status: SeserahanItem["status"], ctx: ActionContext): ItemActionResult {
+  const item = data.seserahan.find((i) => i.id === itemId);
+  if (!item) return { ok: false, error: "not-found" };
+  const updated: SeserahanItem = { ...item, status };
+  const seserahan = data.seserahan.map((i) => (i.id === itemId ? updated : i));
+  return { ok: true, data: withActivity({ ...data, seserahan }, ctx, status === "dibeli" ? "menandai sudah disiapkan" : "memperbarui status", `Seserahan — ${item.name}`), item: updated };
 }

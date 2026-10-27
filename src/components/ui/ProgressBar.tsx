@@ -5,6 +5,8 @@ interface Props {
   tone?: "blush" | "brand" | "success" | "warning" | "danger";
   size?: "sm" | "md";
   className?: string;
+  /** nama untuk pembaca layar, mis. "Kemajuan persiapan seserahan" */
+  label?: string;
 }
 
 const tones = {
@@ -15,12 +17,14 @@ const tones = {
   danger: "bg-danger",
 };
 
-export function ProgressBar({ percent, tone = "blush", size = "md", className }: Props) {
+export function ProgressBar({ percent, tone = "blush", size = "md", className, label }: Props) {
   const clamped = Math.max(0, Math.min(100, percent));
   return (
     <div
       className={clsx("w-full overflow-hidden rounded-full bg-surface-muted", size === "sm" ? "h-1.5" : "h-2.5", className)}
       role="progressbar"
+      aria-label={label}
+      aria-valuetext={label ? `${clamped}%` : undefined}
       aria-valuenow={clamped}
       aria-valuemin={0}
       aria-valuemax={100}

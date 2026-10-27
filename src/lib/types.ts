@@ -118,7 +118,11 @@ export interface SeserahanItem {
   workspaceId: string;
   name: string;
   category: string;
+  /** jumlah barang; item lama tanpa field ini dianggap 1 */
+  quantity?: number;
+  /** perkiraan biaya TOTAL untuk item ini (bukan harga satuan) */
   plannedBudget: number;
+  /** biaya sebenarnya; dihitung sebagai realisasi hanya jika status "dibeli" */
   actualCost: number;
   status: "belum" | "diproses" | "dibeli";
   purchaseDate?: string;

@@ -83,6 +83,17 @@ export type VendorStatus =
   | "fully_paid"
   | "cancelled";
 
+/** Status kontrak: terpisah dari status pemesanan (status) dan dari pembayaran (payments). */
+export type ContractStatus = "belum" | "draft" | "ditandatangani";
+
+/** Satu pembayaran yang BENAR-BENAR sudah dilakukan ke vendor. Dicatat sekali, tidak dibuat otomatis. */
+export interface VendorPayment {
+  id: string;
+  amount: number; // rupiah bulat, > 0
+  paidAt: string; // YYYY-MM-DD
+  note?: string;
+}
+
 export interface Vendor {
   id: string;
   workspaceId: string;
@@ -90,11 +101,21 @@ export interface Vendor {
   category: string;
   contactPerson?: string;
   phone?: string;
+  /** nilai penawaran; menjadi nilai kontrak saat status sudah dipesan (booked/dp_paid/fully_paid) */
   price: number;
+  /** DP yang direncanakan (bukan pembayaran; pembayaran ada di payments) */
   dpAmount: number;
   status: VendorStatus;
   paymentDeadline?: string;
   notes?: string;
+  // --- ditambahkan kemudian; semuanya opsional agar data lama tetap valid ---
+  email?: string;
+  address?: string;
+  packageDescription?: string;
+  contractStatus?: ContractStatus;
+  payments?: VendorPayment[];
+  /** diisi saat diarsipkan; vendor terarsip tidak ikut ringkasan */
+  archivedAt?: string;
 }
 
 export type RsvpStatus = "belum" | "hadir" | "tidak_hadir";

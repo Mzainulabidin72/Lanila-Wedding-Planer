@@ -26,9 +26,15 @@ import {
 } from "./user-storage";
 import type { GuestErrors, RawGuestInput } from "./guests";
 import type { RawSeserahanInput, SeserahanErrors, SeserahanStatus } from "./seserahan";
-import type { Guest, RsvpStatus, SeserahanItem, WeddingWorkspace } from "./types";
+import type { RawPaymentInput, RawVendorInput } from "./vendors";
+import type { Guest, RsvpStatus, SeserahanItem, Vendor, VendorStatus, WeddingWorkspace } from "./types";
 
 type StoreData = Omit<UserData, "version">;
+
+/** Hasil operasi vendor; aturannya sama (ok:true = sudah tersimpan). errors memuat galat per kolom jika validasi gagal. */
+export type VendorResult =
+  | { ok: true; vendor: Vendor }
+  | { ok: false; error: actions.VendorActionError; errors?: Partial<Record<string, string>> };
 
 /** Hasil operasi item seserahan; aturannya sama dengan GuestResult (ok:true = sudah tersimpan). */
 export type ItemResult =
@@ -64,6 +70,16 @@ interface StoreContextValue extends StoreData {
   updateSeserahan: (itemId: string, raw: RawSeserahanInput) => ItemResult;
   deleteSeserahan: (itemId: string) => ItemResult;
   setSeserahanStatus: (itemId: string, status: SeserahanStatus) => ItemResult;
+
+  // --- vendor: tulis dulu ke penyimpanan, baru ubah state; sukses hanya jika tersimpan ---
+  addVendor: (raw: RawVendorInput) => VendorResult;
+  updateVendor: (vendorId: string, raw: RawVendorInput) => VendorResult;
+  setVendorStatus: (vendorId: string, status: VendorStatus) => VendorResult;
+  archiveVendor: (vendorId: string) => VendorResult;
+  restoreVendor: (vendorId: string) => VendorResult;
+  deleteVendor: (vendorId: string) => VendorResult;
+  addVendorPayment: (vendorId: string, raw: RawPaymentInput) => VendorResult;
+  deleteVendorPayment: (vendorId: string, paymentId: string) => VendorResult;
 
   // --- data LAMA dari versi sebelum data dipisah per akun (kepemilikan tidak terverifikasi) ---
   /** Data lama di browser ini yang boleh ditawarkan ke akun ini. Tidak dipakai kecuali pengguna memilih impor. */
@@ -159,6 +175,16 @@ export function StoreProvider({ userId, actorName, storage, children }: StorePro
     [persistThenCommit]
   );
 
+  const runVendor = useCallback(
+    (compute: (current: UserData) => actions.VendorActionResult): VendorResult => {
+      const result = compute(stateRef.current);
+      if (!result.ok) return result;
+      if (!persistThenCommit(result.data)) return { ok: false, error: "storage" };
+      return { ok: true, vendor: result.vendor };
+    },
+    [persistThenCommit]
+  );
+
   const value = useMemo<StoreContextValue>(() => {
     const ctx = (): actions.ActionContext => ({ actorName });
     const { version: _version, ...data } = state;
@@ -186,6 +212,15 @@ export function StoreProvider({ userId, actorName, storage, children }: StorePro
       deleteSeserahan: (itemId) => runItem((s) => actions.deleteSeserahan(s, itemId, ctx())),
       setSeserahanStatus: (itemId, status) => runItem((s) => actions.setSeserahanStatus(s, itemId, status, ctx())),
 
+      addVendor: (raw) => runVendor((s) => actions.addVendor(s, raw, ctx())),
+      updateVendor: (vendorId, raw) => runVendor((s) => actions.updateVendor(s, vendorId, raw, ctx())),
+      setVendorStatus: (vendorId, status) => runVendor((s) => actions.setVendorStatus(s, vendorId, status, ctx())),
+      archiveVendor: (vendorId) => runVendor((s) => actions.archiveVendor(s, vendorId, ctx())),
+      restoreVendor: (vendorId) => runVendor((s) => actions.restoreVendor(s, vendorId, ctx())),
+      deleteVendor: (vendorId) => runVendor((s) => actions.deleteVendor(s, vendorId, ctx())),
+      addVendorPayment: (vendorId, raw) => runVendor((s) => actions.addVendorPayment(s, vendorId, raw, ctx())),
+      deleteVendorPayment: (vendorId, paymentId) => runVendor((s) => actions.deleteVendorPayment(s, vendorId, paymentId, ctx())),
+
       legacyEntries,
       importLegacyData: (sourceKey) => {
         const result = legacy.importLegacy(store, userId, sourceKey);
@@ -203,7 +238,7 @@ export function StoreProvider({ userId, actorName, storage, children }: StorePro
       },
       getLegacyBackup: () => legacy.buildBackupFile(store),
     };
-  }, [state, userId, actorName, commit, run, runItem, store, legacyEntries]);
+  }, [state, userId, actorName, commit, run, runItem, runVendor, store, legacyEntries]);
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
 }

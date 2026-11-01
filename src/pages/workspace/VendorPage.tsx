@@ -1,93 +1,154 @@
+import { useEffect, useMemo, useState } from "react";
+import { AlertCircle, CheckCircle2, Plus } from "lucide-react";
+import { Button } from "@/components/ui";
+import { VendorSummaryView } from "@/components/vendors/VendorSummary";
+import { VendorFilters } from "@/components/vendors/VendorFilters";
+import { VendorEmptyState, VendorList } from "@/components/vendors/VendorList";
+import { VendorFormModal } from "@/components/vendors/VendorFormModal";
+import { VendorDetailModal } from "@/components/vendors/VendorDetailModal";
+import { VendorRemoveDialog } from "@/components/vendors/VendorRemoveDialog";
+import {
+  DEFAULT_VENDOR_FILTERS,
+  VENDOR_STATUS_LABEL,
+  filterAndSortVendors,
+  hasActiveVendorFilters,
+  isArchived,
+  summarizeVendors,
+  vendorCategories,
+  vendorErrorMessage,
+  type VendorFilters as Filters,
+} from "@/lib/vendors";
 import { useStore } from "@/lib/store";
-import { Card, CardBody, Button, EmptyState } from "@/components/ui";
-import { VendorStatusBadge } from "@/components/ui/StatusBadge";
-import { formatDate, formatRupiah } from "@/lib/derive";
-import { Vendor } from "@/lib/types";
-import { Phone, Plus } from "lucide-react";
+import type { Vendor, VendorStatus } from "@/lib/types";
 
-const STATUS_OPTIONS: Vendor["status"][] = [
-  "research",
-  "contacted",
-  "negotiation",
-  "booked",
-  "dp_paid",
-  "fully_paid",
-  "cancelled",
-];
+type Notice = null | { type: "success" | "error"; text: string };
 
 export default function VendorPage() {
-  const { vendors, updateVendorStatus } = useStore();
+  const store = useStore();
+  const { vendors, addVendor, updateVendor, setVendorStatus, archiveVendor, restoreVendor, deleteVendor, addVendorPayment, deleteVendorPayment } = store;
+  const [filters, setFilters] = useState<Filters>(DEFAULT_VENDOR_FILTERS);
+  const [form, setForm] = useState<null | { vendor: Vendor | null }>(null);
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const [removing, setRemoving] = useState<Vendor | null>(null);
+  const [notice, setNotice] = useState<Notice>(null);
 
-  if (vendors.length === 0) {
-    return (
-      <EmptyState
-        icon="🏪"
-        title="Belum ada vendor."
-        description="Tambahkan vendor pertama untuk mulai melacak kontrak dan pembayaran."
-        actionLabel="+ Tambah Vendor"
-        onAction={() => {}}
-      />
+  // Pesan sukses hilang sendiri; pesan galat tetap sampai diganti oleh aksi berikutnya.
+  useEffect(() => {
+    if (notice?.type !== "success") return;
+    const t = setTimeout(() => setNotice(null), 4000);
+    return () => clearTimeout(t);
+  }, [notice]);
+
+  const summary = useMemo(() => summarizeVendors(vendors), [vendors]);
+  const visible = useMemo(() => filterAndSortVendors(vendors, filters), [vendors, filters]);
+  const categories = useMemo(() => vendorCategories(vendors), [vendors]);
+  const clearFilters = () => setFilters({ ...DEFAULT_VENDOR_FILTERS, sort: filters.sort });
+  const detailVendor = detailId ? vendors.find((v) => v.id === detailId) ?? null : null;
+  const activeCount = vendors.filter((v) => !isArchived(v)).length;
+
+  function handleStatus(vendor: Vendor, status: VendorStatus) {
+    const result = setVendorStatus(vendor.id, status);
+    setNotice(
+      result.ok
+        ? { type: "success", text: `Status ${vendor.name} diubah menjadi ${VENDOR_STATUS_LABEL[status]}.` }
+        : { type: "error", text: result.errors?.status ?? vendorErrorMessage(result.error) }
     );
   }
 
+  function handleRestore(vendor: Vendor) {
+    const result = restoreVendor(vendor.id);
+    setNotice(result.ok ? { type: "success", text: `Vendor dipulihkan: ${vendor.name}.` } : { type: "error", text: vendorErrorMessage(result.error) });
+  }
+
   return (
-    <div className="space-y-4">
-      <div className="flex justify-end">
-        <Button size="sm">
-          <Plus size={15} /> Tambah Vendor
+    <div className="space-y-5">
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-semibold text-ink">Vendor</h2>
+          <p className="mt-1 text-sm text-ink-soft">Kelola vendor, kontrak, dan pembayaran pernikahan.</p>
+        </div>
+        <Button onClick={() => setForm({ vendor: null })}>
+          <Plus size={16} aria-hidden="true" /> Tambah Vendor
         </Button>
+      </header>
+
+      {/* Wilayah pengumuman: selalu ada di DOM agar pembaca layar mengumumkan perubahannya */}
+      <div role={notice?.type === "error" ? "alert" : "status"} aria-live="polite">
+        {notice ? (
+          <div className={`flex items-start gap-2 rounded-md px-3 py-2.5 text-sm ${notice.type === "success" ? "bg-success-bg text-[#2F6B47]" : "bg-danger-bg text-[#962F27]"}`}>
+            {notice.type === "success" ? <CheckCircle2 size={16} aria-hidden="true" className="mt-0.5 shrink-0" /> : <AlertCircle size={16} aria-hidden="true" className="mt-0.5 shrink-0" />}
+            <span>{notice.text}</span>
+          </div>
+        ) : null}
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {vendors.map((v) => (
-          <Card key={v.id}>
-            <CardBody className="space-y-3">
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <p className="font-medium text-ink">{v.name}</p>
-                  <p className="text-xs text-ink-faint">{v.category}</p>
-                </div>
-                <VendorStatusBadge status={v.status} />
-              </div>
+      <VendorSummaryView summary={summary} />
 
-              <div className="space-y-1 text-sm text-ink-soft">
-                <div className="flex justify-between">
-                  <span>Harga</span>
-                  <span className="text-ink">{formatRupiah(v.price)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>DP</span>
-                  <span className="text-ink">{formatRupiah(v.dpAmount)}</span>
-                </div>
-                {v.paymentDeadline ? (
-                  <div className="flex justify-between">
-                    <span>Deadline</span>
-                    <span className="text-ink">{formatDate(v.paymentDeadline)}</span>
-                  </div>
-                ) : null}
-              </div>
+      <VendorFilters filters={filters} onChange={setFilters} categories={categories} disabled={vendors.length === 0} shown={visible.length} total={vendors.length} />
 
-              {v.contactPerson ? (
-                <p className="flex items-center gap-1.5 text-xs text-ink-faint">
-                  <Phone size={12} /> {v.contactPerson} · {v.phone}
-                </p>
-              ) : null}
+      {vendors.length === 0 || (activeCount === 0 && !hasActiveVendorFilters(filters)) ? (
+        <VendorEmptyState kind="none" onAdd={() => setForm({ vendor: null })} onClearFilters={clearFilters} archivedCount={vendors.length - activeCount} />
+      ) : visible.length === 0 ? (
+        <VendorEmptyState kind="no-match" onAdd={() => setForm({ vendor: null })} onClearFilters={clearFilters} />
+      ) : (
+        <VendorList vendors={visible} onDetail={(v) => setDetailId(v.id)} onEdit={(v) => setForm({ vendor: v })} onRemove={setRemoving} onRestore={handleRestore} onStatusChange={handleStatus} />
+      )}
 
-              <select
-                value={v.status}
-                onChange={(e) => updateVendorStatus(v.id, e.target.value as Vendor["status"])}
-                className="w-full rounded-md border border-surface-border px-2.5 py-1.5 text-sm text-ink-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand"
-              >
-                {STATUS_OPTIONS.map((s) => (
-                  <option key={s} value={s}>
-                    {s.replace("_", " ")}
-                  </option>
-                ))}
-              </select>
-            </CardBody>
-          </Card>
-        ))}
-      </div>
+      {form ? (
+        <VendorFormModal
+          key={form.vendor?.id ?? "baru"}
+          vendor={form.vendor}
+          existing={vendors}
+          onClose={() => setForm(null)}
+          onSubmit={(raw) => {
+            const result = form.vendor ? updateVendor(form.vendor.id, raw) : addVendor(raw);
+            if (result.ok) {
+              const hidden = hasActiveVendorFilters(filters) && filterAndSortVendors([result.vendor], filters).length === 0;
+              setForm(null);
+              setNotice({ type: "success", text: `${form.vendor ? "Perubahan disimpan" : "Vendor ditambahkan"}: ${result.vendor.name}.${hidden ? " Vendor ini tidak tampil karena filter aktif." : ""}` });
+            }
+            return result;
+          }}
+        />
+      ) : null}
+
+      {detailVendor ? (
+        <VendorDetailModal
+          key={detailVendor.id}
+          vendor={detailVendor}
+          onClose={() => setDetailId(null)}
+          onEdit={(v) => {
+            setDetailId(null);
+            setForm({ vendor: v });
+          }}
+          onAddPayment={(raw) => addVendorPayment(detailVendor.id, raw)}
+          onDeletePayment={(paymentId) => deleteVendorPayment(detailVendor.id, paymentId)}
+        />
+      ) : null}
+
+      {removing ? (
+        <VendorRemoveDialog
+          key={removing.id}
+          vendor={removing}
+          onCancel={() => setRemoving(null)}
+          onArchive={() => {
+            const result = archiveVendor(removing.id);
+            if (result.ok) {
+              setRemoving(null);
+              setNotice({ type: "success", text: `Vendor diarsipkan: ${removing.name}. Lihat lewat filter "Diarsipkan".` });
+            }
+            return result;
+          }}
+          onDelete={() => {
+            const result = deleteVendor(removing.id);
+            if (result.ok) {
+              setRemoving(null);
+              setNotice({ type: "success", text: `Vendor dihapus permanen: ${removing.name}.` });
+            }
+            return result;
+          }}
+        />
+      ) : null}
     </div>
   );
 }

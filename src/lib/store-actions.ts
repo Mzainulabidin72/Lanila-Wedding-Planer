@@ -7,7 +7,18 @@ import { formatRupiah } from "./derive";
 import { validateGuestInput, type GuestActionError, type GuestErrors, type RawGuestInput } from "./guests";
 import { validateSeserahanInput, type ItemActionError, type RawSeserahanInput, type SeserahanErrors } from "./seserahan";
 import { buildStarterStages } from "./templates";
-import type { ActivityLogEntry, Guest, PreparationStage, SeserahanItem, Vendor, WeddingTask, WeddingWorkspace } from "./types";
+import {
+  QUOTE_STATUSES,
+  VENDOR_STATUSES,
+  localDateString,
+  paymentsOf,
+  validatePaymentInput,
+  validateVendorInput,
+  type RawPaymentInput,
+  type RawVendorInput,
+  type VendorActionError,
+} from "./vendors";
+import type { ActivityLogEntry, Guest, PreparationStage, SeserahanItem, Vendor, VendorPayment, VendorStatus, WeddingTask, WeddingWorkspace } from "./types";
 import type { UserData } from "./user-storage";
 
 const MAX_ACTIVITY = 50;
@@ -211,4 +222,93 @@ export function setSeserahanStatus(data: UserData, itemId: string, status: Seser
   const updated: SeserahanItem = { ...item, status };
   const seserahan = data.seserahan.map((i) => (i.id === itemId ? updated : i));
   return { ok: true, data: withActivity({ ...data, seserahan }, ctx, status === "dibeli" ? "menandai sudah disiapkan" : "memperbarui status", `Seserahan — ${item.name}`), item: updated };
+}
+
+// ---------------------------------------------------------------- vendor (CRUD, arsip, pembayaran)
+
+export type { VendorActionError };
+
+export type VendorActionResult =
+  | { ok: true; data: UserData; vendor: Vendor }
+  | { ok: false; error: VendorActionError; errors?: Partial<Record<string, string>> };
+
+function replaceVendor(data: UserData, vendor: Vendor): UserData["vendors"] {
+  return data.vendors.map((v) => (v.id === vendor.id ? vendor : v));
+}
+
+export function addVendor(data: UserData, raw: RawVendorInput, ctx: ActionContext): VendorActionResult {
+  if (!data.workspace) return { ok: false, error: "no-workspace" };
+  const { errors, value } = validateVendorInput(raw, data.vendors);
+  if (!value) return { ok: false, error: "validation", errors };
+  const vendor: Vendor = { id: newId("v"), workspaceId: data.workspace.id, ...value };
+  return { ok: true, data: withActivity({ ...data, vendors: [...data.vendors, vendor] }, ctx, "menambahkan vendor", vendor.name), vendor };
+}
+
+/** Mengubah vendor; catatan pembayaran, status arsip, dan kolom lain yang tidak ada di form tetap dipertahankan. */
+export function updateVendor(data: UserData, vendorId: string, raw: RawVendorInput, ctx: ActionContext): VendorActionResult {
+  const current = data.vendors.find((v) => v.id === vendorId);
+  if (!current) return { ok: false, error: "not-found" };
+  const { errors, value } = validateVendorInput(raw, data.vendors, vendorId);
+  if (!value) return { ok: false, error: "validation", errors };
+  const vendor: Vendor = { ...current, ...value }; // kolom opsional yang dikosongkan menjadi undefined; payments/archivedAt ikut dari current
+  return { ok: true, data: withActivity({ ...data, vendors: replaceVendor(data, vendor) }, ctx, "mengubah vendor", vendor.name), vendor };
+}
+
+/** Ubah status pemesanan saja (aksi cepat). Tidak membuat atau mengubah pembayaran apa pun. */
+export function setVendorStatus(data: UserData, vendorId: string, status: VendorStatus, ctx: ActionContext): VendorActionResult {
+  const current = data.vendors.find((v) => v.id === vendorId);
+  if (!current) return { ok: false, error: "not-found" };
+  if (!VENDOR_STATUSES.includes(status)) return { ok: false, error: "validation", errors: { status: "Status tidak dikenal." } };
+  if (paymentsOf(current).length > 0 && QUOTE_STATUSES.includes(status)) {
+    return { ok: false, error: "validation", errors: { status: "Vendor ini sudah punya pembayaran tercatat. Hapus pembayaran dulu, atau ubah status ke Dibatalkan." } };
+  }
+  const vendor: Vendor = { ...current, status };
+  return { ok: true, data: withActivity({ ...data, vendors: replaceVendor(data, vendor) }, ctx, "memperbarui status vendor", vendor.name), vendor };
+}
+
+/** Arsip = disembunyikan dari daftar dan ringkasan, tetapi seluruh catatan pembayaran dipertahankan. */
+export function archiveVendor(data: UserData, vendorId: string, ctx: ActionContext): VendorActionResult {
+  const current = data.vendors.find((v) => v.id === vendorId);
+  if (!current) return { ok: false, error: "not-found" };
+  if (current.archivedAt) return { ok: true, data, vendor: current };
+  const vendor: Vendor = { ...current, archivedAt: (ctx.now ?? new Date()).toISOString() };
+  return { ok: true, data: withActivity({ ...data, vendors: replaceVendor(data, vendor) }, ctx, "mengarsipkan vendor", vendor.name), vendor };
+}
+
+export function restoreVendor(data: UserData, vendorId: string, ctx: ActionContext): VendorActionResult {
+  const current = data.vendors.find((v) => v.id === vendorId);
+  if (!current) return { ok: false, error: "not-found" };
+  if (!current.archivedAt) return { ok: true, data, vendor: current };
+  const { archivedAt: _archivedAt, ...rest } = current;
+  void _archivedAt;
+  const vendor: Vendor = rest;
+  return { ok: true, data: withActivity({ ...data, vendors: replaceVendor(data, vendor) }, ctx, "memulihkan vendor", vendor.name), vendor };
+}
+
+/** Hapus permanen; catatan pembayaran vendor itu ikut terhapus (UI menawarkan Arsipkan sebagai pilihan aman). */
+export function deleteVendor(data: UserData, vendorId: string, ctx: ActionContext): VendorActionResult {
+  const vendor = data.vendors.find((v) => v.id === vendorId);
+  if (!vendor) return { ok: false, error: "not-found" };
+  const vendors = data.vendors.filter((v) => v.id !== vendorId);
+  return { ok: true, data: withActivity({ ...data, vendors }, ctx, "menghapus vendor", vendor.name), vendor };
+}
+
+/** Mencatat satu pembayaran yang sudah dilakukan. Hanya ini jalur yang menambah pembayaran. */
+export function addVendorPayment(data: UserData, vendorId: string, raw: RawPaymentInput, ctx: ActionContext): VendorActionResult {
+  const current = data.vendors.find((v) => v.id === vendorId);
+  if (!current) return { ok: false, error: "not-found" };
+  const today = localDateString(ctx.now ?? new Date());
+  const { errors, value } = validatePaymentInput(raw, current, today);
+  if (!value) return { ok: false, error: "validation", errors };
+  const payment: VendorPayment = { id: newId("pay"), ...value };
+  const vendor: Vendor = { ...current, payments: [...paymentsOf(current), payment] };
+  return { ok: true, data: withActivity({ ...data, vendors: replaceVendor(data, vendor) }, ctx, "mencatat pembayaran vendor", `${vendor.name}: ${formatRupiah(payment.amount)}`), vendor };
+}
+
+export function deleteVendorPayment(data: UserData, vendorId: string, paymentId: string, ctx: ActionContext): VendorActionResult {
+  const current = data.vendors.find((v) => v.id === vendorId);
+  const payment = current && paymentsOf(current).find((p) => p.id === paymentId);
+  if (!current || !payment) return { ok: false, error: "not-found" };
+  const vendor: Vendor = { ...current, payments: paymentsOf(current).filter((p) => p.id !== paymentId) };
+  return { ok: true, data: withActivity({ ...data, vendors: replaceVendor(data, vendor) }, ctx, "menghapus catatan pembayaran vendor", `${vendor.name}: ${formatRupiah(payment.amount)}`), vendor };
 }

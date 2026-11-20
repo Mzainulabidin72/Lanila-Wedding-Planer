@@ -56,6 +56,9 @@ export interface WeddingTask {
   priority: TaskPriority;
   status: TaskStatus;
   linkedPreparationItemId?: string;
+  description?: string;
+  notes?: string;
+  reminderDate?: string;
 }
 
 export type PaymentStatus = "belum_bayar" | "dp" | "lunas";
@@ -71,6 +74,35 @@ export interface BudgetItem {
   vendorId?: string;
   deadline?: string;
   paymentStatus: PaymentStatus;
+  notes?: string;
+}
+
+export type BudgetPaymentType = "dp" | "installment" | "final";
+
+export interface BudgetPayment {
+  id: string;
+  workspaceId: string;
+  budgetItemId: string;
+  amount: number;
+  paidAt: string;
+  method?: string;
+  type: BudgetPaymentType;
+  notes?: string;
+}
+
+export type GiftType = "cash" | "transfer" | "physical" | "other";
+export type ThankYouStatus = "belum" | "sudah";
+
+export interface GiftRecord {
+  id: string;
+  workspaceId: string;
+  giftType: GiftType;
+  donorName?: string;
+  description: string;
+  amount?: number;
+  itemName?: string;
+  receivedAt: string;
+  thankYouStatus: ThankYouStatus;
   notes?: string;
 }
 

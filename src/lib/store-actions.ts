@@ -18,7 +18,7 @@ import {
   type RawVendorInput,
   type VendorActionError,
 } from "./vendors";
-import type { ActivityLogEntry, Guest, PreparationStage, SeserahanItem, Vendor, VendorPayment, VendorStatus, WeddingTask, WeddingWorkspace } from "./types";
+import type { ActivityLogEntry, BudgetItem, BudgetPayment, GiftRecord, Guest, PreparationStage, SeserahanItem, Vendor, VendorPayment, VendorStatus, WeddingTask, WeddingWorkspace } from "./types";
 import type { UserData } from "./user-storage";
 
 const MAX_ACTIVITY = 50;
@@ -75,6 +75,12 @@ export function createWorkspace(data: UserData, userId: string, input: NewWorksp
   return { ...data, workspace, stages: buildStarterStages(id) };
 }
 
+export function updateWorkspaceBudget(data: UserData, targetBudget: number, ctx: ActionContext): UserData {
+  if (!data.workspace || !Number.isFinite(targetBudget) || targetBudget < 0) return data;
+  const workspace = { ...data.workspace, targetBudget: Math.round(targetBudget) };
+  return withActivity({ ...data, workspace }, ctx, "memperbarui budget pernikahan", formatRupiah(workspace.targetBudget));
+}
+
 export function updatePreparationStatus(
   data: UserData,
   stageId: string,
@@ -99,6 +105,55 @@ export function updateTaskStatus(data: UserData, taskId: string, status: Wedding
   return withActivity({ ...data, tasks }, ctx, status === "completed" ? "menyelesaikan tugas" : "memperbarui tugas", task.title);
 }
 
+export interface RawTaskInput {
+  title: string;
+  description?: string;
+  category: string;
+  startDate?: string;
+  deadline?: string;
+  priority: WeddingTask["priority"];
+  status: WeddingTask["status"];
+  notes?: string;
+  reminderDate?: string;
+  assignee?: string;
+}
+
+export function saveTask(data: UserData, taskId: string | null, input: RawTaskInput, ctx: ActionContext): UserData {
+  if (!data.workspace || !input.title.trim() || !input.category.trim()) return data;
+  if (input.startDate && input.deadline && input.startDate > input.deadline) return data;
+  if (taskId) {
+    const existing = data.tasks.find((task) => task.id === taskId);
+    if (!existing) return data;
+    const tasks = data.tasks.map((task) =>
+      task.id === taskId
+        ? { ...task, ...input, title: input.title.trim(), category: input.category.trim(), workspaceId: data.workspace!.id }
+        : task
+    );
+    return withActivity({ ...data, tasks }, ctx, "memperbarui tugas", input.title.trim());
+  }
+  const task: WeddingTask = {
+    id: newId("task"),
+    workspaceId: data.workspace.id,
+    title: input.title.trim(),
+    category: input.category.trim(),
+    description: input.description?.trim() || undefined,
+    assignee: input.assignee?.trim() || undefined,
+    startDate: input.startDate || undefined,
+    deadline: input.deadline || undefined,
+    priority: input.priority,
+    status: input.status,
+    notes: input.notes?.trim() || undefined,
+    reminderDate: input.reminderDate || undefined,
+  };
+  return withActivity({ ...data, tasks: [task, ...data.tasks] }, ctx, "menambah tugas", task.title);
+}
+
+export function deleteTask(data: UserData, taskId: string, ctx: ActionContext): UserData {
+  const task = data.tasks.find((item) => item.id === taskId);
+  if (!task) return data;
+  return withActivity({ ...data, tasks: data.tasks.filter((item) => item.id !== taskId) }, ctx, "menghapus tugas", task.title);
+}
+
 export function recordBudgetPayment(data: UserData, budgetItemId: string, amount: number, ctx: ActionContext): UserData {
   const item = data.budgetItems.find((b) => b.id === budgetItemId);
   if (!item || !Number.isFinite(amount)) return data;
@@ -113,6 +168,193 @@ export function recordBudgetPayment(data: UserData, budgetItemId: string, amount
   );
   const next = { ...data, budgetItems };
   return amount > 0 ? withActivity(next, ctx, "mencatat pembayaran", `${formatRupiah(amount)} untuk ${item.name}`) : next;
+}
+
+export interface RawBudgetInput {
+  name: string;
+  category: string;
+  vendorId?: string;
+  plannedAmount: number;
+  actualAmount: number;
+  deadline?: string;
+  notes?: string;
+}
+
+export function saveBudgetItem(data: UserData, itemId: string | null, input: RawBudgetInput, ctx: ActionContext): UserData {
+  if (!data.workspace || !input.name.trim() || !input.category.trim()) return data;
+  if (input.plannedAmount < 0 || input.actualAmount < 0) return data;
+  if (itemId) {
+    const existing = data.budgetItems.find((item) => item.id === itemId);
+    if (!existing) return data;
+    const budgetItems = data.budgetItems.map((item) =>
+      item.id === itemId
+        ? {
+            ...item,
+            ...input,
+            name: input.name.trim(),
+            category: input.category.trim(),
+            paidAmount: Math.min(existing.paidAmount, input.actualAmount),
+            paymentStatus: existing.paidAmount >= input.actualAmount && input.actualAmount > 0 ? ("lunas" as const) : existing.paidAmount > 0 ? ("dp" as const) : ("belum_bayar" as const),
+          }
+        : item
+    );
+    return withActivity({ ...data, budgetItems }, ctx, "memperbarui anggaran", input.name.trim());
+  }
+  const item: BudgetItem = {
+    id: newId("budget"),
+    workspaceId: data.workspace.id,
+    name: input.name.trim(),
+    category: input.category.trim(),
+    vendorId: input.vendorId || undefined,
+    plannedAmount: Math.round(input.plannedAmount),
+    actualAmount: Math.round(input.actualAmount),
+    paidAmount: 0,
+    deadline: input.deadline || undefined,
+    paymentStatus: "belum_bayar",
+    notes: input.notes?.trim() || undefined,
+  };
+  return withActivity({ ...data, budgetItems: [item, ...data.budgetItems] }, ctx, "menambah anggaran", item.name);
+}
+
+export function deleteBudgetItem(data: UserData, itemId: string, ctx: ActionContext): UserData {
+  const item = data.budgetItems.find((entry) => entry.id === itemId);
+  if (!item) return data;
+  return withActivity(
+    {
+      ...data,
+      budgetItems: data.budgetItems.filter((entry) => entry.id !== itemId),
+      budgetPayments: (data.budgetPayments ?? []).filter((payment) => payment.budgetItemId !== itemId),
+    },
+    ctx,
+    "menghapus anggaran",
+    item.name
+  );
+}
+
+export interface RawBudgetPaymentInput {
+  amount: number;
+  paidAt: string;
+  method?: string;
+  type: BudgetPayment["type"];
+  notes?: string;
+}
+
+export function addBudgetPayment(
+  data: UserData,
+  budgetItemId: string,
+  input: RawBudgetPaymentInput,
+  ctx: ActionContext
+): UserData {
+  const item = data.budgetItems.find((entry) => entry.id === budgetItemId);
+  if (!item || !data.workspace || input.amount <= 0 || !input.paidAt) return data;
+  const currentPaid = (data.budgetPayments ?? []).filter((payment) => payment.budgetItemId === budgetItemId).reduce((sum, payment) => sum + payment.amount, 0);
+  const payable = Math.max(0, item.actualAmount - currentPaid);
+  if (payable <= 0) return data;
+  const amount = Math.min(Math.round(input.amount), payable);
+  const payment: BudgetPayment = {
+    id: newId("payment"),
+    workspaceId: data.workspace.id,
+    budgetItemId,
+    amount,
+    paidAt: input.paidAt,
+    method: input.method?.trim() || undefined,
+    type: input.type,
+    notes: input.notes?.trim() || undefined,
+  };
+  const paidAmount = currentPaid + amount;
+  const budgetItems = data.budgetItems.map((entry) =>
+    entry.id === budgetItemId
+      ? {
+          ...entry,
+          paidAmount,
+          paymentStatus: paidAmount >= entry.actualAmount ? ("lunas" as const) : ("dp" as const),
+        }
+      : entry
+  );
+  return withActivity(
+    { ...data, budgetItems, budgetPayments: [payment, ...(data.budgetPayments ?? [])] },
+    ctx,
+    "mencatat pembayaran",
+    `${formatRupiah(amount)} untuk ${item.name}`
+  );
+}
+
+export function deleteBudgetPayment(data: UserData, budgetItemId: string, paymentId: string, ctx: ActionContext): UserData {
+  const item = data.budgetItems.find((entry) => entry.id === budgetItemId);
+  const payment = (data.budgetPayments ?? []).find((entry) => entry.id === paymentId);
+  if (!item || !payment) return data;
+  const budgetPayments = (data.budgetPayments ?? []).filter((entry) => entry.id !== paymentId);
+  const paidAmount = budgetPayments.filter((entry) => entry.budgetItemId === budgetItemId).reduce((sum, entry) => sum + entry.amount, 0);
+  const budgetItems = data.budgetItems.map((entry) =>
+    entry.id === budgetItemId
+      ? {
+          ...entry,
+          paidAmount,
+          paymentStatus: paidAmount >= entry.actualAmount && entry.actualAmount > 0 ? ("lunas" as const) : paidAmount > 0 ? ("dp" as const) : ("belum_bayar" as const),
+        }
+      : entry
+  );
+  return withActivity({ ...data, budgetItems, budgetPayments }, ctx, "menghapus pembayaran", item.name);
+}
+
+export interface RawGiftInput {
+  giftType: GiftRecord["giftType"];
+  donorName?: string;
+  description: string;
+  amount?: number;
+  itemName?: string;
+  receivedAt: string;
+  thankYouStatus: GiftRecord["thankYouStatus"];
+  notes?: string;
+}
+
+export function saveGift(data: UserData, giftId: string | null, input: RawGiftInput, ctx: ActionContext): UserData {
+  if (!data.workspace || !input.description.trim() || !input.receivedAt) return data;
+  if ((input.giftType === "cash" || input.giftType === "transfer") && (!input.amount || input.amount < 0)) return data;
+  if (giftId) {
+    const existing = (data.gifts ?? []).find((gift) => gift.id === giftId);
+    if (!existing) return data;
+    const gifts = (data.gifts ?? []).map((gift) =>
+      gift.id === giftId
+        ? {
+            ...gift,
+            ...input,
+            donorName: input.donorName?.trim() || undefined,
+            description: input.description.trim(),
+            amount: input.giftType === "cash" || input.giftType === "transfer" ? Math.round(input.amount ?? 0) : undefined,
+            itemName: input.giftType === "physical" ? input.itemName?.trim() || undefined : undefined,
+            notes: input.notes?.trim() || undefined,
+          }
+        : gift
+    );
+    return withActivity({ ...data, gifts }, ctx, "memperbarui hadiah", input.description.trim());
+  }
+  const gift: GiftRecord = {
+    id: newId("gift"),
+    workspaceId: data.workspace.id,
+    giftType: input.giftType,
+    donorName: input.donorName?.trim() || undefined,
+    description: input.description.trim(),
+    amount: input.giftType === "cash" || input.giftType === "transfer" ? Math.round(input.amount ?? 0) : undefined,
+    itemName: input.giftType === "physical" ? input.itemName?.trim() || undefined : undefined,
+    receivedAt: input.receivedAt,
+    thankYouStatus: input.thankYouStatus,
+    notes: input.notes?.trim() || undefined,
+  };
+  return withActivity({ ...data, gifts: [gift, ...(data.gifts ?? [])] }, ctx, "menambah hadiah", gift.description);
+}
+
+export function deleteGift(data: UserData, giftId: string, ctx: ActionContext): UserData {
+  const gift = (data.gifts ?? []).find((entry) => entry.id === giftId);
+  if (!gift) return data;
+  return withActivity({ ...data, gifts: (data.gifts ?? []).filter((entry) => entry.id !== giftId) }, ctx, "menghapus hadiah", gift.description);
+}
+
+export function updateGiftThankYou(data: UserData, giftId: string, thankYouStatus: GiftRecord["thankYouStatus"], ctx: ActionContext): UserData {
+  const gift = (data.gifts ?? []).find((entry) => entry.id === giftId);
+  if (!gift) return data;
+  const gifts = (data.gifts ?? []).map((entry) => (entry.id === giftId ? { ...entry, thankYouStatus } : entry));
+  return withActivity({ ...data, gifts }, ctx, "memperbarui status ucapan terima kasih", gift.description);
 }
 
 export function updateVendorStatus(data: UserData, vendorId: string, status: Vendor["status"], ctx: ActionContext): UserData {

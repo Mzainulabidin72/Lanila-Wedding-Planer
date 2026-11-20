@@ -52,12 +52,23 @@ export type GuestResult =
 interface StoreContextValue extends StoreData {
   /** Membuat proyek pernikahan milik akun ini. Mengembalikan proyek (atau yang sudah ada). */
   createWorkspace: (input: actions.NewWorkspaceInput) => WeddingWorkspace | null;
+  updateWorkspaceBudget: (targetBudget: number) => void;
   updatePreparationStatus: (stageId: string, itemId: string, status: Parameters<typeof actions.updatePreparationStatus>[3]) => void;
   updateTaskStatus: (taskId: string, status: Parameters<typeof actions.updateTaskStatus>[2]) => void;
   recordBudgetPayment: (budgetItemId: string, amount: number) => void;
   updateVendorStatus: (vendorId: string, status: Parameters<typeof actions.updateVendorStatus>[2]) => void;
   updateGuestRsvp: (guestId: string, rsvp: Parameters<typeof actions.updateGuestRsvp>[2]) => void;
   updateSeserahanStatus: (itemId: string, status: Parameters<typeof actions.updateSeserahanStatus>[2]) => void;
+
+  saveTask: (taskId: string | null, raw: actions.RawTaskInput) => void;
+  deleteTask: (taskId: string) => void;
+  saveBudgetItem: (itemId: string | null, raw: actions.RawBudgetInput) => void;
+  deleteBudgetItem: (itemId: string) => void;
+  addBudgetPayment: (budgetItemId: string, raw: actions.RawBudgetPaymentInput) => void;
+  deleteBudgetPayment: (budgetItemId: string, paymentId: string) => void;
+  saveGift: (giftId: string | null, raw: actions.RawGiftInput) => void;
+  deleteGift: (giftId: string) => void;
+  updateGiftThankYou: (giftId: string, status: Parameters<typeof actions.updateGiftThankYou>[2]) => void;
 
   // --- daftar tamu: tulis dulu ke penyimpanan, baru ubah state; sukses hanya jika tersimpan ---
   addGuest: (raw: RawGuestInput) => GuestResult;
@@ -192,6 +203,8 @@ export function StoreProvider({ userId, actorName, storage, children }: StorePro
     return {
       ...data,
       createWorkspace: (input) => commit((s) => actions.createWorkspace(s, userId, input)).workspace,
+      updateWorkspaceBudget: (targetBudget) =>
+        void commit((s) => actions.updateWorkspaceBudget(s, targetBudget, ctx())),
       updatePreparationStatus: (stageId, itemId, status) =>
         void commit((s) => actions.updatePreparationStatus(s, stageId, itemId, status, ctx())),
       updateTaskStatus: (taskId, status) => void commit((s) => actions.updateTaskStatus(s, taskId, status, ctx())),
@@ -201,6 +214,17 @@ export function StoreProvider({ userId, actorName, storage, children }: StorePro
       updateGuestRsvp: (guestId, rsvp) => void commit((s) => actions.updateGuestRsvp(s, guestId, rsvp, ctx())),
       updateSeserahanStatus: (itemId, status) =>
         void commit((s) => actions.updateSeserahanStatus(s, itemId, status, ctx())),
+      saveTask: (taskId, raw) => void commit((s) => actions.saveTask(s, taskId, raw, ctx())),
+      deleteTask: (taskId) => void commit((s) => actions.deleteTask(s, taskId, ctx())),
+      saveBudgetItem: (itemId, raw) => void commit((s) => actions.saveBudgetItem(s, itemId, raw, ctx())),
+      deleteBudgetItem: (itemId) => void commit((s) => actions.deleteBudgetItem(s, itemId, ctx())),
+      addBudgetPayment: (budgetItemId, raw) => void commit((s) => actions.addBudgetPayment(s, budgetItemId, raw, ctx())),
+      deleteBudgetPayment: (budgetItemId, paymentId) =>
+        void commit((s) => actions.deleteBudgetPayment(s, budgetItemId, paymentId, ctx())),
+      saveGift: (giftId, raw) => void commit((s) => actions.saveGift(s, giftId, raw, ctx())),
+      deleteGift: (giftId) => void commit((s) => actions.deleteGift(s, giftId, ctx())),
+      updateGiftThankYou: (giftId, status) =>
+        void commit((s) => actions.updateGiftThankYou(s, giftId, status, ctx())),
 
       addGuest: (raw) => run((s) => actions.addGuest(s, raw, ctx())),
       updateGuest: (guestId, raw) => run((s) => actions.updateGuest(s, guestId, raw, ctx())),

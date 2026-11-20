@@ -14,7 +14,9 @@
 import type {
   ActivityLogEntry,
   BudgetItem,
+  BudgetPayment,
   Guest,
+  GiftRecord,
   PreparationStage,
   SeserahanItem,
   Vendor,
@@ -30,9 +32,11 @@ export interface UserData {
   stages: PreparationStage[];
   tasks: WeddingTask[];
   budgetItems: BudgetItem[];
+  budgetPayments?: BudgetPayment[];
   vendors: Vendor[];
   guests: Guest[];
   seserahan: SeserahanItem[];
+  gifts?: GiftRecord[];
   activityLog: ActivityLogEntry[];
 }
 
@@ -81,9 +85,11 @@ const ARRAY_FIELDS = [
   "stages",
   "tasks",
   "budgetItems",
+  "budgetPayments",
   "vendors",
   "guests",
   "seserahan",
+  "gifts",
   "activityLog",
 ] as const;
 
@@ -98,9 +104,11 @@ export function emptyUserData(): UserData {
     stages: [],
     tasks: [],
     budgetItems: [],
+    budgetPayments: [],
     vendors: [],
     guests: [],
     seserahan: [],
+    gifts: [],
     activityLog: [],
   };
 }
@@ -112,7 +120,10 @@ export function parseUserData(raw: string | null, userId: string): UserData | nu
     const data = JSON.parse(raw) as Partial<UserData> | null;
     if (!data || typeof data !== "object" || data.version !== STORAGE_VERSION) return null;
     for (const field of ARRAY_FIELDS) {
-      if (!Array.isArray(data[field])) return null;
+      if (!Array.isArray(data[field])) {
+        if (field === "budgetPayments" || field === "gifts") (data as Record<string, unknown>)[field] = [];
+        else return null;
+      }
     }
     if (data.workspace != null) {
       if (typeof data.workspace !== "object" || data.workspace.ownerId !== userId) return null;
